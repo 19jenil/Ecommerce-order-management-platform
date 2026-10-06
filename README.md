@@ -1,208 +1,716 @@
+# E-Commerce Order Management Platform
 
-# Enterprise Modular Commerce & Event-Driven Platform
+A full-stack e-commerce and order management platform built with **Java, Spring Boot, React, TypeScript, PostgreSQL, MongoDB, RabbitMQ, Docker, and Kubernetes**.
 
-An enterprise-grade modular e-commerce & event-driven processing platform built with Java 21 / Spring Boot 3.3, PostgreSQL (Flyway), MongoDB (Audit/Activity logs), RabbitMQ (Async event decoupling), React + TypeScript + shadcn/ui, and containerized via Docker/Kubernetes manifests.
+The platform supports secure authentication, product and category management, shopping carts, checkout, order history, asynchronous order-event processing, and audit logging. It combines relational and document-based persistence and provides containerized development and deployment workflows.
 
-It started as a straightforward product catalog + JWT auth sample and has been expanded into a modular platform covering catalog, cart, checkout, order history, asynchronous event processing, and polyglot persistence (relational + document store), with a container and CI/CD story suitable for a portfolio or as a base for further microservice extraction.
-
----
-
-## Architecture Overview
-
-```text
-                        ┌─────────────────────────┐
-                        │   React + TS Frontend    │
-                        │  (Vite, Tailwind/shadcn)  │
-                        └────────────┬─────────────┘
-                                     │ REST (JWT)
-                                     ▼
-                        ┌─────────────────────────┐
-                        │   Spring Boot Backend    │
-                        │  Auth / Product / Cart /  │
-                        │  Order / Category modules │
-                        └──────┬──────────┬─────────┘
-                               │          │
-                 synchronous   │          │  async (order events)
-                               ▼          ▼
-                    ┌───────────────┐  ┌───────────────────┐
-                    │  PostgreSQL   │  │   RabbitMQ topic   │
-                    │ (Flyway-      │  │  order.exchange     │
-                    │  managed      │  │  -> order.created   │
-                    │  schema)      │  │     queue            │
-                    └───────────────┘  └─────────┬───────────┘
-                                                  │ consumed by
-                                                  ▼
-                                        ┌───────────────────┐
-                                        │  Audit listener    │
-                                        │  writes to MongoDB │
-                                        └───────────────────┘
-```
-
-The backend is organized into feature packages (`cart/`, `order/`, `category/`, `audit/`) alongside the original flat `model/controller/repo/service` packages used by the pre-existing Product and Auth code, which were left untouched.
-
-**Order event flow:** placing an order (`POST /api/orders`) persists the order and its line items in PostgreSQL inside a single transaction, clears the user's cart, writes a synchronous audit entry, and then publishes an `OrderCreatedEvent` to the `order.exchange` topic exchange in RabbitMQ. A `@RabbitListener` consumer picks the event up asynchronously from the `order.created.queue` and records a second audit entry in MongoDB — demonstrating decoupled, event-driven processing on top of the synchronous request/response path. Product searches are also recorded to the audit log.
+> **Portfolio project:** This repository represents a customized and extended version of an existing e-commerce codebase, with additional work focused on backend configuration, persistence, event-driven processing, containerization, testing, and deployment workflows.
 
 ---
 
-## Backend - Spring Boot
+## 🚀 Key Features
 
-### Technologies
+- 🔐 **JWT Authentication & Authorization**
+  - User registration and login
+  - JWT-based authentication
+  - Role-based access control for `USER` and `ADMIN`
 
-* Java 21, Spring Boot 3.3.3
-* Spring Security & JWT authentication
-* Spring Data JPA + PostgreSQL (Flyway-managed schema) for local dev: H2 in-memory
-* Spring Data MongoDB for audit/activity logging
-* Spring AMQP / RabbitMQ for asynchronous order events
-* springdoc-openapi (Swagger UI)
-* Testcontainers (Postgres, MongoDB, RabbitMQ) + Mockito/JUnit 5 for testing
-* Maven, Lombok
+- 🛍️ **Product & Category Management**
+  - Product CRUD operations
+  - Product image upload
+  - Category management
+  - Product search
 
-### Backend directory structure
+- 🛒 **Shopping Cart & Checkout**
+  - Persistent server-side shopping cart
+  - Add, update, and remove cart items
+  - Transactional checkout workflow
+  - Automatic cart clearing after successful checkout
+
+- 📦 **Order Management**
+  - Order creation
+  - Order line items
+  - Order status tracking
+  - Per-user order history
+  - Detailed order retrieval
+
+- ⚡ **Event-Driven Processing**
+  - RabbitMQ-based asynchronous order events
+  - `OrderCreatedEvent` messaging
+  - Decoupled audit processing using RabbitMQ consumers
+
+- 📊 **Audit Logging**
+  - MongoDB-based audit/activity storage
+  - Order event auditing
+  - Product-search auditing
+
+- 🗄️ **Polyglot Persistence**
+  - PostgreSQL for transactional application data
+  - MongoDB for audit/activity data
+  - Flyway database migrations
+
+- 🐳 **Containerization**
+  - Dockerized backend and frontend
+  - Docker Compose for local full-stack environments
+  - Health checks and persistent database volumes
+
+- ☸️ **Kubernetes Deployment**
+  - Kubernetes Deployments and Services
+  - ConfigMaps and Secrets
+  - PostgreSQL and MongoDB persistent volumes
+  - RabbitMQ deployment
+
+- 🧪 **Automated Testing**
+  - JUnit 5
+  - Mockito
+  - Testcontainers
+  - PostgreSQL/MongoDB integration testing
+
+- 🔄 **CI/CD**
+  - GitHub Actions
+  - GitLab CI
+  - Backend build and test automation
+  - Frontend linting and build validation
+
+---
+
+# 🏗️ Architecture
 
 ```text
-Ecommerce-Backend/
-└── src/main/java/com/cart/ecom_proj/
-    ├── controller/ model/ repo/ service/   # Original Product & Auth code (unchanged)
-    ├── security/                           # JWT filter, security config
-    ├── config/                             # RabbitMQConfig, Swagger config
-    ├── category/                           # Category entity, repo, service, controller
-    ├── cart/                               # Cart, CartItem, cart service/controller
-    ├── order/                              # Order, OrderItem, checkout service/controller
-    └── audit/                              # MongoDB AuditLog + async order-event listener
+                         ┌─────────────────────────────┐
+                         │     React + TypeScript       │
+                         │       Vite Frontend         │
+                         │   Tailwind / UI Components  │
+                         └──────────────┬──────────────┘
+                                        │
+                                   REST + JWT
+                                        │
+                                        ▼
+                    ┌─────────────────────────────────────┐
+                    │        Spring Boot Backend          │
+                    │                                     │
+                    │  Auth │ Products │ Categories       │
+                    │  Cart │ Orders   │ Audit            │
+                    └───────────────┬───────────┬─────────┘
+                                    │           │
+                              Sync  │           │ Async
+                                    │           │
+                                    ▼           ▼
+                         ┌───────────────┐   ┌───────────────┐
+                         │  PostgreSQL   │   │   RabbitMQ    │
+                         │               │   │               │
+                         │ Users         │   │ Order Events  │
+                         │ Products      │   │               │
+                         │ Cart          │   └───────┬───────┘
+                         │ Orders        │           │
+                         └───────────────┘           ▼
+                                            ┌────────────────┐
+                                            │ Audit Consumer │
+                                            └───────┬────────┘
+                                                    │
+                                                    ▼
+                                             ┌─────────────┐
+                                             │   MongoDB   │
+                                             │ Audit Logs  │
+                                             └─────────────┘
 ```
 
-### Local development (H2, no external infrastructure)
+### Order Event Flow
+
+The checkout workflow follows a synchronous transaction followed by asynchronous event processing:
+
+```text
+User Checkout
+     │
+     ▼
+POST /api/orders
+     │
+     ├── Create Order
+     ├── Create Order Items
+     ├── Clear Cart
+     ├── Write Audit Entry
+     │
+     ▼
+Publish OrderCreatedEvent
+     │
+     ▼
+RabbitMQ
+     │
+     ▼
+@RabbitListener
+     │
+     ▼
+MongoDB Audit Log
+```
+
+This separates the core checkout transaction from downstream audit processing.
+
+---
+
+# 🧰 Technology Stack
+
+## Backend
+
+| Technology | Purpose |
+|---|---|
+| Java 21 | Application development |
+| Spring Boot | Backend framework |
+| Spring Security | Authentication & authorization |
+| JWT | Stateless authentication |
+| Spring Data JPA | Relational persistence |
+| PostgreSQL | Transactional database |
+| Flyway | Database migrations |
+| Spring Data MongoDB | Audit persistence |
+| MongoDB | Audit/activity database |
+| Spring AMQP | RabbitMQ integration |
+| RabbitMQ | Asynchronous messaging |
+| Maven | Build & dependency management |
+| Lombok | Boilerplate reduction |
+| Springdoc OpenAPI | API documentation |
+
+## Frontend
+
+| Technology | Purpose |
+|---|---|
+| React | UI development |
+| TypeScript | Type-safe frontend development |
+| Vite | Frontend tooling |
+| React Router | Client-side routing |
+| Axios | HTTP/API communication |
+| Tailwind CSS | Styling |
+| shadcn/ui-style components | Reusable UI components |
+| Context API | Application state |
+
+## DevOps & Infrastructure
+
+| Technology | Purpose |
+|---|---|
+| Docker | Application containerization |
+| Docker Compose | Local multi-container environment |
+| Kubernetes | Container orchestration |
+| GitHub Actions | CI/CD |
+| GitLab CI | CI/CD |
+| Kubernetes ConfigMaps | Configuration |
+| Kubernetes Secrets | Sensitive configuration |
+| Persistent Volumes | Database persistence |
+
+## Testing
+
+| Technology | Purpose |
+|---|---|
+| JUnit 5 | Unit testing |
+| Mockito | Mock-based testing |
+| Testcontainers | Integration testing |
+| Maven Surefire | Test execution |
+
+---
+
+# 📁 Project Structure
+
+```text
+Ecommerce-order-management-platform/
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── Ecommerce-Backend/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/com/cart/ecom_proj/
+│   │   │   │
+│   │   │   ├── audit/
+│   │   │   ├── cart/
+│   │   │   ├── category/
+│   │   │   ├── config/
+│   │   │   ├── controller/
+│   │   │   ├── dto/
+│   │   │   ├── model/
+│   │   │   ├── order/
+│   │   │   ├── repo/
+│   │   │   ├── security/
+│   │   │   └── service/
+│   │   │
+│   │   └── resources/
+│   │       ├── db/migration/
+│   │       ├── application.properties
+│   │       ├── application-dev.properties
+│   │       └── application-docker.properties
+│   │
+│   ├── Dockerfile
+│   └── pom.xml
+│
+├── Ecommerce-Frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── types/
+│   │   ├── Context/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   │
+│   ├── Dockerfile
+│   └── package.json
+│
+├── k8s/
+│   ├── backend-deployment.yaml
+│   ├── backend-service.yaml
+│   ├── frontend-deployment.yaml
+│   ├── frontend-service.yaml
+│   ├── postgres-deployment.yaml
+│   ├── postgres-pvc.yaml
+│   ├── mongodb-deployment.yaml
+│   ├── mongodb-pvc.yaml
+│   ├── rabbitmq-deployment.yaml
+│   ├── configmap.yaml
+│   └── secret.yaml
+│
+├── docker-compose.yml
+├── .gitignore
+├── .gitlab-ci.yml
+└── README.md
+```
+
+---
+
+# 🔑 Authentication
+
+The backend uses **Spring Security and JWT** for stateless authentication.
+
+### Authentication Flow
+
+```text
+Register
+   │
+   ▼
+POST /api/auth/register
+   │
+   ▼
+User stored in PostgreSQL
+   │
+   ▼
+Login
+   │
+   ▼
+POST /api/auth/login
+   │
+   ▼
+JWT Token
+   │
+   ▼
+Frontend stores authentication state
+   │
+   ▼
+JWT attached to protected API requests
+```
+
+Administrative endpoints require the appropriate `ADMIN` role.
+
+---
+
+# 🔌 REST API
+
+## Authentication
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register a user |
+| POST | `/api/auth/login` | Authenticate and receive JWT |
+
+## Products
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/products` | Retrieve products |
+| GET | `/api/products/{id}` | Retrieve product |
+| GET | `/api/products/search?keyword=` | Search products |
+| POST | `/api/products` | Create product |
+| PUT | `/api/products/{id}` | Update product |
+| DELETE | `/api/products/{id}` | Delete product |
+
+Product administration endpoints require `ADMIN` authorization.
+
+## Categories
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/categories` | List categories |
+| GET | `/api/categories/{id}` | Get category |
+| POST | `/api/categories` | Create category |
+| PUT | `/api/categories/{id}` | Update category |
+| DELETE | `/api/categories/{id}` | Delete category |
+
+## Cart
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/cart` | Get authenticated user's cart |
+| POST | `/api/cart` | Add/increment cart item |
+| DELETE | `/api/cart/{cartItemId}` | Remove cart item |
+
+## Orders
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/orders` | Checkout and create order |
+| GET | `/api/orders/{userId}` | Retrieve order history |
+| GET | `/api/orders/detail/{orderId}` | Retrieve order details |
+
+---
+
+# 🗄️ Data Architecture
+
+The application uses two persistence technologies for different workloads.
+
+### PostgreSQL
+
+Used for transactional application data:
+
+```text
+Users
+Products
+Categories
+Cart
+Cart Items
+Orders
+Order Items
+```
+
+Flyway manages database schema migrations.
+
+### MongoDB
+
+Used for audit/activity data:
+
+```text
+AuditLog
+   ├── Order events
+   └── Product search activity
+```
+
+This separation demonstrates **polyglot persistence**, using each database according to the workload.
+
+---
+
+# 📨 Event-Driven Processing
+
+RabbitMQ is used to decouple order events from downstream audit processing.
+
+When checkout succeeds:
+
+```text
+Order Service
+     │
+     ▼
+OrderCreatedEvent
+     │
+     ▼
+RabbitMQ Exchange
+     │
+     ▼
+order.created.queue
+     │
+     ▼
+OrderEventListener
+     │
+     ▼
+MongoDB AuditLog
+```
+
+This allows audit processing to occur asynchronously instead of making it part of the primary checkout response path.
+
+---
+
+# 🐳 Running with Docker Compose
+
+### Prerequisites
+
+- Docker Desktop
+- Docker Compose
+- Git
+
+Clone the repository:
 
 ```bash
-cd Ecommerce-Backend
-mvn spring-boot:run
+git clone https://github.com/19jenil/Ecommerce-order-management-platform.git
+cd Ecommerce-order-management-platform
 ```
 
-This runs with the `dev` profile (the default), backed by an in-memory H2 database — no PostgreSQL, MongoDB, or RabbitMQ required. Audit writes and event publishing fail silently (logged, non-fatal) if Mongo/RabbitMQ are not reachable, so the app still runs standalone.
-
-* H2 Console: `http://localhost:8080/h2-console` (JDBC URL `jdbc:h2:mem:EcommerceDB`, user `sa`, password `project1`)
-* Swagger UI: `http://localhost:8080/swagger-ui.html`
-
-### Full stack with Docker Compose (PostgreSQL, MongoDB, RabbitMQ)
+Start the full stack:
 
 ```bash
 docker compose up --build
 ```
 
-This starts PostgreSQL, MongoDB, RabbitMQ, the backend (Spring profile `docker`, Flyway-migrated schema), and the frontend (nginx). Backend on `http://localhost:8080`, frontend on `http://localhost:5173`, RabbitMQ management UI on `http://localhost:15672` (guest/guest).
-
-### Key REST API endpoints
-
-| Method | Endpoint | Description | Auth Required |
-| --- | --- | --- | --- |
-| `POST` | `/api/auth/register` | Register a new user (`USER` / `ADMIN`) | No |
-| `POST` | `/api/auth/login` | Login and receive JWT token (includes user id) | No |
-| `GET` | `/api/products` | Fetch all products | No |
-| `GET` | `/api/products/{id}` | Get product details by ID | No |
-| `GET` | `/api/products/search?keyword=` | Search products (audit-logged) | No |
-| `POST` | `/api/products` | Add a new product (multipart image) | Yes (ADMIN) |
-| `PUT` | `/api/products/{id}` | Update product details | Yes (ADMIN) |
-| `DELETE` | `/api/products/{id}` | Delete a product | Yes (ADMIN) |
-| `GET` | `/api/categories` | List all categories | No |
-| `GET` | `/api/categories/{id}` | Get a category | No |
-| `POST` | `/api/categories` | Create a category | Yes (ADMIN) |
-| `PUT` | `/api/categories/{id}` | Update a category | Yes (ADMIN) |
-| `DELETE` | `/api/categories/{id}` | Delete a category | Yes (ADMIN) |
-| `GET` | `/api/cart` | Get the authenticated user's cart | Yes |
-| `POST` | `/api/cart` | Add/increment an item in the cart | Yes |
-| `DELETE` | `/api/cart/{cartItemId}` | Remove an item from the cart | Yes |
-| `POST` | `/api/orders` | Checkout: convert cart into an order | Yes |
-| `GET` | `/api/orders/{userId}` | Order history for a user | Yes |
-| `GET` | `/api/orders/detail/{orderId}` | Get a single order's detail | Yes |
-
----
-
-## Frontend - React + TypeScript
-
-### Technologies
-
-* React 18 + TypeScript, Vite
-* Tailwind CSS + hand-authored shadcn/ui-style primitives (`Button`, `Card`, `Input`, `Badge`)
-* React Router DOM v6 (protected routes)
-* Axios, with a typed API client (`src/api/client.ts`) wrapping products/categories/cart/orders
-* Context API for auth/cart/theme state
-* Existing Bootstrap-based pages (Home, Product, Navbar, legacy Cart) remain as-is; new pages (Cart checkout, Order history, Category browser) use Tailwind/shadcn
-
-### Frontend directory structure
+The environment includes:
 
 ```text
-Ecommerce-Frontend/
-└── src/
-    ├── api/client.ts     # Typed wrapper around backend REST endpoints
-    ├── types/            # Shared TypeScript interfaces (Product, Cart, Order, Category, User)
-    ├── components/ui/    # shadcn-style Button, Card, Input, Badge primitives
-    ├── pages/            # CartPage, OrdersPage, CategoriesPage (Tailwind/shadcn)
-    ├── components/       # Existing Navbar, Home, Product, Login, Register, etc. (Bootstrap)
-    ├── Context/           # AppContext for global auth/cart/theme state
-    ├── axios.ts           # Central Axios instance with JWT interceptor
-    ├── App.tsx            # Router and protected routes
-    └── main.tsx           # Application entry point
+Frontend       → http://localhost:5173
+Backend        → http://localhost:8080
+Swagger UI     → http://localhost:8080/swagger-ui.html
+RabbitMQ UI    → http://localhost:15672
+PostgreSQL     → localhost:5432
+MongoDB        → localhost:27017
 ```
 
-### Setup & run
+> Development credentials and secrets in configuration files are intended for local development only. Production deployments should provide secrets through environment variables or a secure secret-management solution.
+
+Stop the environment:
 
 ```bash
-cd Ecommerce-Frontend
-npm install
-npm run dev
+docker compose down
 ```
 
-Access the UI at `http://localhost:5173`.
-
-### Build & type-check
+Remove containers and persistent volumes:
 
 ```bash
-npm run build   # tsc --noEmit && vite build
+docker compose down -v
 ```
 
 ---
 
-## Testing
+# 💻 Local Backend Development
 
-### Backend
+Navigate to the backend:
 
 ```bash
 cd Ecommerce-Backend
-mvn test                     # fast unit tests (Mockito), excludes *IT classes by default
-mvn test -Dtest='*IT'        # Testcontainers-based integration tests (requires Docker)
 ```
 
-Unit tests cover `CartService` and `OrderService` business logic. `OrderCheckoutIT` is a Testcontainers-based integration test that spins up real PostgreSQL and MongoDB containers, exercises the full checkout flow (cart -> order), and verifies both the persisted order and the audit log entry. It is excluded from the default `mvn test` run and named with the `IT` suffix / tagged `integration` so CI can run it separately on Docker-enabled runners.
+Run:
 
-### Frontend
+```bash
+mvn spring-boot:run
+```
+
+The default development profile uses an in-memory H2 database.
+
+Swagger UI:
+
+```text
+http://localhost:8080/swagger-ui.html
+```
+
+H2 Console:
+
+```text
+http://localhost:8080/h2-console
+```
+
+---
+
+# 🎨 Local Frontend Development
+
+Navigate to the frontend:
 
 ```bash
 cd Ecommerce-Frontend
-npm run build   # type-checks with tsc and builds with Vite
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the development server:
+
+```bash
+npm run dev
+```
+
+Build the application:
+
+```bash
+npm run build
+```
+
+Run linting:
+
+```bash
 npm run lint
 ```
 
-### CI/CD
+---
 
-`.github/workflows/ci.yml` runs backend unit tests, Testcontainers integration tests, and a Maven package on every push/PR, plus a frontend job (`npm ci`, lint, `npm run build`). `.gitlab-ci.yml` mirrors the same build/test stages for GitLab.
+# 🧪 Testing
+
+## Backend Unit Tests
+
+```bash
+cd Ecommerce-Backend
+mvn test
+```
+
+Unit tests use JUnit 5 and Mockito.
+
+## Integration Tests
+
+The project includes Testcontainers-based integration testing for database-backed workflows.
+
+```bash
+mvn test -Dtest='*IT'
+```
+
+The integration environment can provision services such as PostgreSQL and MongoDB through Docker.
+
+## Frontend Validation
+
+```bash
+cd Ecommerce-Frontend
+
+npm run lint
+npm run build
+```
 
 ---
 
-## Deployment
+# ☸️ Kubernetes Deployment
 
-* **Docker Compose** (`docker-compose.yml`): backend, frontend, PostgreSQL, MongoDB, and RabbitMQ with health checks and named volumes — see "Full stack with Docker Compose" above.
-* **Kubernetes** (`k8s/`): plain YAML manifests — namespace, ConfigMap/Secret, Deployments and Services for backend, frontend, PostgreSQL (with PVC), MongoDB (with PVC), and RabbitMQ. Apply with `kubectl apply -f k8s/`.
+Kubernetes manifests are provided under:
+
+```text
+k8s/
+```
+
+The deployment includes:
+
+```text
+Namespace
+├── Backend Deployment + Service
+├── Frontend Deployment + Service
+├── PostgreSQL Deployment + PVC + Service
+├── MongoDB Deployment + PVC + Service
+├── RabbitMQ Deployment + Service
+├── ConfigMap
+└── Secret
+```
+
+Apply the manifests:
+
+```bash
+kubectl apply -f k8s/
+```
+
+Check workloads:
+
+```bash
+kubectl get pods
+kubectl get services
+```
+
+> The included Kubernetes secret contains example values only. Production deployments should use a secure secret-management mechanism.
 
 ---
 
-## Features
+# 🔄 CI/CD
 
-* **Authentication & Authorization:** JWT-based login/registration with role-based access control (`ADMIN` / `USER`).
-* **Product Catalog & Categories:** CRUD product management with image upload, plus category management and category-based browsing.
-* **Cart & Checkout:** Server-side cart backed by PostgreSQL, checkout that atomically creates an order and clears the cart.
-* **Order History:** Per-user order history with line items and status.
-* **Asynchronous Event Processing:** RabbitMQ-based `OrderCreatedEvent` decouples audit logging from the checkout request.
-* **Audit Logging:** MongoDB-backed audit trail for order creation and product searches.
-* **Polyglot Persistence:** PostgreSQL (relational, Flyway-migrated) alongside MongoDB (document store) for audit data.
-* **Containerized & Cloud-Ready:** Multi-stage Docker images, Docker Compose for local full-stack runs, and Kubernetes manifests for cluster deployment.
-* **CI/CD:** GitHub Actions and GitLab CI pipelines covering backend tests/build and frontend type-check/build.
+The repository includes automated CI configuration.
+
+### GitHub Actions
+
+The workflow performs:
+
+```text
+Push / Pull Request
+        │
+        ├── Backend unit tests
+        ├── Integration tests
+        ├── Maven package
+        │
+        └── Frontend
+             ├── npm ci
+             ├── lint
+             └── build
+```
+
+Workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+### GitLab CI
+
+A corresponding GitLab pipeline is provided through:
+
+```text
+.gitlab-ci.yml
+```
+
+---
+
+# 🔧 Engineering Work & Customization
+
+This repository was used as a base for hands-on engineering work and customization.
+
+Key areas of work include:
+
+- Refactoring persistence configuration for PostgreSQL compatibility
+- Correcting binary image persistence using PostgreSQL `bytea`
+- Improving environment-based JWT configuration
+- Removing hardcoded JWT secrets from application configuration
+- Working with Docker Compose across backend, frontend, PostgreSQL, MongoDB, and RabbitMQ
+- Configuring asynchronous order-event processing
+- Working with Kubernetes deployment manifests
+- Validating backend and integration testing workflows
+- Preparing the project for a clean, reproducible development environment
+
+The repository is intended to demonstrate practical experience across **backend development, full-stack integration, databases, messaging, containerization, testing, and deployment**.
+
+---
+
+# 📈 Future Improvements
+
+Potential next steps include:
+
+- Extracting backend domains into independently deployable microservices
+- Introducing an API gateway
+- Adding centralized configuration management
+- Adding distributed tracing and observability
+- Introducing Redis caching
+- Adding automated container image publishing
+- Adding cloud deployment
+- Improving frontend test coverage
+- Adding end-to-end browser testing
+- Implementing stronger production secret management
+- Adding structured application logging and metrics
+
+---
+
+# 📚 Learning Outcomes
+
+This project provides hands-on exposure to:
+
+- REST API development
+- Spring Boot application architecture
+- Secure JWT authentication
+- Relational database design
+- NoSQL data modeling
+- Database migrations
+- Event-driven architecture
+- Message brokers
+- Transaction management
+- Unit and integration testing
+- Testcontainers
+- Docker
+- Kubernetes
+- CI/CD
+- React and TypeScript
+- Full-stack application integration
+
+---
+
+## 👨‍💻 Author
+
+**Jenil Patel**
+
+
+GitHub: https://github.com/19jenil
+
+---
+
+## 📄 License
+
+This repository is intended primarily as a learning and portfolio project.
